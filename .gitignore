@@ -1,0 +1,40 @@
+# --- Secrets: never commit ---------------------------------------------------
+.env
+.env.local
+*.env
+!.env.example
+cookies.txt
+
+# --- Generated media / job workspaces ----------------------------------------
+work/
+backend/work/
+*.mp4
+*.mkv
+*.webm
+*.jpg
+*.png
+!docs/**/*.png
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Node --------------------------------------------------------------------
+node_modules/
+dist/
+.vite/
+
+# --- Editors / OS ------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Sample videos ARE committed so a reviewer can run the demo offline ------
+!samples/
+!samples/**
