@@ -26,6 +26,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.domain.models import VideoMeta
+
 log = logging.getLogger(__name__)
 
 # ffmpeg writes progress and diagnostics to stderr; on failure we keep the tail,
@@ -46,9 +48,9 @@ _BASE_FLAGS: tuple[str, ...] = ("-hide_banner", "-nostdin", "-loglevel", "error"
 class FFmpegError(RuntimeError):
     """A failed ffmpeg/ffprobe invocation, with enough context to debug it.
 
-    Intentionally *not* a domain error: `infra` knows nothing about the domain.
-    Adapters translate this into a domain failure, which is exactly what an
-    adapter is for.
+    Intentionally *not* a domain error. Adapters translate this into one, which
+    is exactly what an adapter is for - it means nothing above the adapter layer
+    has to know that ffmpeg is what failed.
     """
 
     def __init__(self, argv: Sequence[str], returncode: int, stderr: str) -> None:
@@ -205,36 +207,6 @@ class FilterGraph:
 # =============================================================================
 
 
-@dataclass(frozen=True, slots=True)
-class MediaInfo:
-    """What ffprobe knows about a file, reduced to what this app actually uses."""
-
-    path: Path
-    duration_s: float
-    width: int
-    height: int
-    fps: float
-    has_audio: bool
-    video_codec: str
-    #: Degrees from a display matrix, if any. Phone-shot vertical video very
-    #: often stores landscape pixels plus a rotation, and ffmpeg applies it on
-    #: decode. Ignoring it would mean every bounding box we compute is expressed
-    #: against different dimensions than the frames the detector actually saw.
-    rotation: int = 0
-
-    @property
-    def display_width(self) -> int:
-        return self.height if self.rotation % 180 else self.width
-
-    @property
-    def display_height(self) -> int:
-        return self.width if self.rotation % 180 else self.height
-
-    @property
-    def is_vertical(self) -> bool:
-        return self.display_height > self.display_width
-
-
 class Ffmpeg:
     """Async wrapper around the ffmpeg and ffprobe binaries.
 
@@ -291,7 +263,7 @@ class Ffmpeg:
 
     # --- probing -------------------------------------------------------------
 
-    async def probe(self, path: Path, *, timeout_s: float | None = 30.0) -> MediaInfo:
+    async def probe(self, path: Path, *, timeout_s: float | None = 30.0) -> VideoMeta:
         stdout, _ = await self._exec(
             self._ffprobe,
             [
@@ -308,8 +280,8 @@ class Ffmpeg:
         return parse_probe(path, json.loads(stdout))
 
 
-def parse_probe(path: Path, payload: Mapping[str, object]) -> MediaInfo:
-    """Pure translation of ffprobe JSON into `MediaInfo`.
+def parse_probe(path: Path, payload: Mapping[str, object]) -> VideoMeta:
+    """Pure translation of ffprobe JSON into `VideoMeta`.
 
     Split out from `Ffmpeg.probe` so the parsing - which is where the fiddly
     cases live - can be unit-tested against captured payloads rather than only
@@ -322,8 +294,7 @@ def parse_probe(path: Path, payload: Mapping[str, object]) -> MediaInfo:
     if video is None:
         raise ValueError(f"{path.name} contains no video stream")
 
-    return MediaInfo(
-        path=path,
+    return VideoMeta(
         duration_s=_duration(fmt, video),
         width=int(video.get("width") or 0),
         height=int(video.get("height") or 0),

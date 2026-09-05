@@ -17,7 +17,8 @@ import logging
 from pathlib import Path
 
 from app.domain.errors import MediaTooLongError, ProcessingError, UnsupportedMediaError
-from app.infra.ffmpeg import Ffmpeg, Filter, FilterChain, FilterGraph, MediaInfo
+from app.domain.models import VideoMeta
+from app.infra.ffmpeg import Ffmpeg, Filter, FilterChain, FilterGraph
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ class FfmpegVideoEditor:
         self._target_height = target_height
         self._max_video_seconds = max_video_seconds
 
-    async def probe(self, path: Path) -> MediaInfo:
+    async def probe(self, path: Path) -> VideoMeta:
         """Probe, with tool failures translated into domain errors."""
         try:
             return await self._ffmpeg.probe(path)
@@ -49,7 +50,7 @@ class FfmpegVideoEditor:
         except Exception as exc:  # a broken or truncated container
             raise UnsupportedMediaError(f"could not read {path.name} as video") from exc
 
-    async def normalise(self, source: Path, dest: Path) -> MediaInfo:
+    async def normalise(self, source: Path, dest: Path) -> VideoMeta:
         """Re-encode `source` into the one format the rest of the pipeline assumes.
 
         Everything downstream - scene detection, frame sampling, the removal
