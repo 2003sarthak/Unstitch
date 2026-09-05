@@ -1,0 +1,17 @@
+# Secrets must never enter an image layer - they survive in the layer history
+# even if a later step deletes them.
+.env
+.env.local
+
+# Rebuilt inside the image / irrelevant to it.
+.venv/
+work/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Dev-only: the image installs requirements.txt alone.
+tests/
+requirements-dev.txt
+pyproject.toml

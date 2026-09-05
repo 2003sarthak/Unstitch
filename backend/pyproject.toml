@@ -1,0 +1,16 @@
+# Tooling configuration only. Dependencies stay in requirements*.txt because the
+# Docker build installs them with plain pip and no build backend is involved -
+# this project is an application, not a distributable package.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lets `pytest` resolve `import app.*` when run from backend/ without an install.
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

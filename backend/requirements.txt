@@ -1,0 +1,44 @@
+# =============================================================================
+#  Unstitch - backend runtime dependencies
+# =============================================================================
+#  Runtime deps are pinned exactly so a Docker rebuild months from now produces
+#  the same image. Dev-only tools float (see requirements-dev.txt) because they
+#  never ship.
+#
+#  Verified to install and import on CPython 3.11 (local venv) - which is the
+#  same interpreter the Dockerfile pins, so dev and prod agree.
+# =============================================================================
+
+# --- Web layer ---------------------------------------------------------------
+fastapi==0.141.1
+# [standard] pulls uvloop + httptools: a materially faster event loop and HTTP
+# parser on Linux. Both are no-ops on Windows, so local dev is unaffected.
+uvicorn[standard]==0.52.4
+# Required by FastAPI to parse multipart/form-data, i.e. the file-upload path.
+python-multipart==0.0.32
+
+# --- Configuration -----------------------------------------------------------
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# --- Video I/O ---------------------------------------------------------------
+# ffmpeg/ffprobe themselves are system binaries, installed via apt in the
+# Dockerfile - not pip. Nothing here shells out except infra/ffmpeg.py.
+yt-dlp==2026.8.19
+
+# --- Scene detection ---------------------------------------------------------
+scenedetect==0.7.1
+# NOTE: deliberately opencv-python, NOT opencv-python-headless.
+# scenedetect 0.7.1 hard-requires `opencv-python` and no longer exposes an
+# `opencv-headless` extra, so asking for headless installs BOTH distributions -
+# two copies of the same `cv2` module racing to own the import path, plus ~100MB
+# of dead weight. One GUI-build wheel plus two apt shared libs is the smaller,
+# more predictable answer. See the Dockerfile.
+opencv-python==5.0.0.93
+numpy==2.4.6
+
+# --- Vision ------------------------------------------------------------------
+# Google's current SDK. The legacy `google-generativeai` package is superseded;
+# `google-genai` is the one that exposes response_schema for forced-JSON output,
+# which is what makes the detection contract reliable.
+google-genai==2.22.0
