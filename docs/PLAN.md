@@ -86,9 +86,11 @@ Distinguishing these is what makes it *understanding* rather than *OCR*.
 > First build step is a `venv` on 3.11/3.12 if available, else verify 3.14 wheels resolve.
 > The Docker image pins `python:3.11-slim` regardless, so deployment is unaffected.
 
-**Free-tier budget:** Gemini free tier is ~10 RPM / ~250 requests-per-day on 2.5 Flash.
-We batch 6 frames per request and cap at 24 frames ⇒ **4 requests per video**. That is
-~60 de-edits/day on the free tier. Comfortable. `vision_stub` adapter (heuristic
+**Free-tier budget:** ~~~10 RPM / ~250 requests-per-day~~ **Corrected after measuring
+it in production:** Google's 429 body reports `GenerateRequestsPerDayPerProjectPerModel-FreeTier`
+with `limit: 20` per day on 2.5 Flash. We batch 6 frames per request and cap at 24 frames
+⇒ **4 requests per video** ⇒ about **5 de-edits per day**, not 60. Raising
+`VISION_BATCH_SIZE` to 12 halves that cost. `vision_stub` adapter (heuristic
 edge-density text detection) keeps the app demoable with zero API key or when quota is hit.
 
 ---
