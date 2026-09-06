@@ -18,13 +18,19 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 # ffmpeg          - every render, cut, thumbnail and probe in the app
+# fonts-dejavu-core
+#                 - ffmpeg's drawtext needs a real font file on disk to
+#                   re-render an edited caption. Without it the filter fails
+#                   at runtime with a fontconfig error, and only on the
+#                   rebuild path - which is exactly the kind of bug that
+#                   reaches production because the happy path never hits it.
 # libgl1,
 # libglib2.0-0    - shared libraries the opencv-python wheel links against.
 #                   Needed because scenedetect 0.7 requires the GUI build of
 #                   OpenCV; see the note in requirements.txt. Two apt packages
 #                   is cheaper than shipping two copies of cv2.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Hugging Face Spaces runs the container as UID 1000. Writing the workspace as a

@@ -26,16 +26,16 @@ class TestScalingPolicy:
     """Pure: no encoding, no ffmpeg."""
 
     def test_height_is_capped_and_width_follows(self) -> None:
-        graph = FfmpegVideoEditor(Ffmpeg(), target_height=720)._normalise_graph()
+        graph = FfmpegVideoEditor(Ffmpeg(), target_height=720).normalise_graph()
         assert graph.to_args() == ["-vf", "scale=w=-2:h=min(ih\\,720)"]
 
     def test_min_expression_means_we_only_ever_downscale(self) -> None:
         """`min(ih,720)` rather than a bare `720`: upscaling a 480p source would
         invent detail the detector then has to read text out of."""
-        assert "min(ih" in FfmpegVideoEditor(Ffmpeg())._normalise_graph().render()
+        assert "min(ih" in FfmpegVideoEditor(Ffmpeg()).normalise_graph().render()
 
     def test_target_height_is_injected_not_hard_coded(self) -> None:
-        graph = FfmpegVideoEditor(Ffmpeg(), target_height=480)._normalise_graph()
+        graph = FfmpegVideoEditor(Ffmpeg(), target_height=480).normalise_graph()
         assert graph.render() == "scale=w=-2:h=min(ih\\,480)"
 
 

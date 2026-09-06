@@ -47,8 +47,14 @@ class RemovalMode(StrEnum):
 
     Selectable per job rather than fixed, because the right choice depends on
     the footage: `delogo` interpolates from the mask border and looks best over
-    busy video, `boxblur` is an honest smear that never invents detail, and
-    `inpaint` is slower but can beat both over flat backgrounds.
+    busy video, while `boxblur` never invents detail and is the more honest
+    choice when the point is to show that something *was* there.
+
+    OpenCV inpainting was considered and dropped rather than stubbed. It needs a
+    per-frame Python loop at roughly 50ms a frame - about two minutes for a 90s
+    clip - which does not fit a free-tier request, and it cannot share the single
+    render pass the other two modes use. A `RemovalMode.INPAINT` that quietly did
+    something else would be worse than not offering it.
 
     These are `StrEnum`s rather than `Literal[...]` aliases for two reasons:
     FastAPI renders them as a proper `enum` in the OpenAPI schema, and a
@@ -60,7 +66,6 @@ class RemovalMode(StrEnum):
 
     DELOGO = "delogo"
     BOXBLUR = "boxblur"
-    INPAINT = "inpaint"
 
 
 class OverlayKind(StrEnum):

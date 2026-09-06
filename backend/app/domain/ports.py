@@ -90,8 +90,15 @@ class FrameSampler(Protocol):
     """
 
     async def sample(
-        self, video: Path, meta: VideoMeta, scenes: Sequence[Scene]
-    ) -> list[SampledFrame]: ...
+        self, video: Path, meta: VideoMeta, scenes: Sequence[Scene], dest_dir: Path
+    ) -> list[SampledFrame]:
+        """Extract the chosen frames into `dest_dir` and describe them.
+
+        The destination is passed in rather than derived, because the workspace
+        layout belongs to `infra.workspace` and an adapter should not be a second
+        place that knows where a job's files live.
+        """
+        ...
 
 
 @runtime_checkable

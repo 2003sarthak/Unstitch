@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # --- Overlay tracking -----------------------------------------------------
     track_iou_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    track_max_gap_s: float = Field(default=2.0, ge=0.0)
+    track_max_gap_s: float = Field(default=3.5, ge=0.0)
     min_detection_confidence: float = Field(default=0.35, ge=0.0, le=1.0)
 
     # --- Removal --------------------------------------------------------------
