@@ -4,7 +4,7 @@
 #  Why a container and not a serverless function: the API answers 202 and keeps
 #  working after the response is sent. A Vercel/Lambda-style function is killed
 #  when the request ends, so the polling job model this app is built on cannot
-#  run there. See docs/PLAN.md section 10.
+#  run there. See docs/ARCHITECTURE.md.
 # =============================================================================
 FROM python:3.11-slim
 

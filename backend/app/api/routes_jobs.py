@@ -6,10 +6,10 @@ also the reason the backend is a container rather than a serverless function -
 the work has to outlive the response that acknowledged it.
 
 Two submission routes rather than one endpoint that sniffs its content type.
-`docs/PLAN.md` proposed a single `POST /api/jobs` taking either JSON or
-multipart; splitting them gives each a precise OpenAPI schema, which is what the
-frontend's generated types and the interactive docs read. One handler that
-branched on `Content-Type` would document as neither.
+A single `POST /api/jobs` accepting either JSON or multipart was considered;
+splitting them gives each a precise OpenAPI schema, which is what the frontend's
+types and the interactive docs read. One handler branching on `Content-Type`
+would document as neither.
 """
 
 from __future__ import annotations
