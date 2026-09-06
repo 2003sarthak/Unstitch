@@ -123,6 +123,22 @@ class VisionDetector(Protocol):
 
 
 @runtime_checkable
+class BoxRefiner(Protocol):
+    """Snaps model-estimated boxes onto the pixels they describe.
+
+    A port rather than a step inside the vision adapter, because it is a
+    different kind of operation with a different failure mode: the detector
+    answers *what* is on screen, and this measures *exactly where*. Keeping them
+    apart means the refinement applies to any detector - and can be switched off
+    to show the difference.
+    """
+
+    async def refine(
+        self, detections: Sequence[Detection], frames: Sequence[SampledFrame]
+    ) -> list[Detection]: ...
+
+
+@runtime_checkable
 class VideoEditor(Protocol):
     """Everything that writes a video file."""
 

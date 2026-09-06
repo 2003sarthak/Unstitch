@@ -8,7 +8,7 @@ and testable against fakes in milliseconds with no video at all.
 
 The stages, and why they are in this order:
 
-    ingest -> normalise -> scenes -> sample -> detect -> track -> render
+    ingest -> normalise -> scenes -> sample -> detect -> refine -> track -> render
 
 Normalisation comes second because everything after it is allowed to assume
 H.264 at a known height, which removes a pile of format handling from four later
@@ -37,6 +37,7 @@ from app.domain.models import (
     VisionProvider,
 )
 from app.domain.ports import (
+    BoxRefiner,
     FrameSampler,
     MediaIngestor,
     ProgressCallback,
@@ -65,6 +66,7 @@ class Pipeline:
         scene_detector: SceneDetector,
         sampler: FrameSampler,
         vision: VisionDetector,
+        refiner: BoxRefiner,
         editor: VideoEditor,
         vision_provider: VisionProvider,
         iou_threshold: float = 0.5,
@@ -77,6 +79,7 @@ class Pipeline:
         self._scenes = scene_detector
         self._sampler = sampler
         self._vision = vision
+        self._refiner = refiner
         self._editor = editor
         self._vision_provider = vision_provider
         self._iou_threshold = iou_threshold
@@ -169,6 +172,11 @@ class Pipeline:
     ) -> list[OverlayTrack]:
         frames = await self._sampler.sample(workspace.source, meta, scenes, workspace.frames_dir)
         detections = await self._vision.detect(frames)
+        # Measure the boxes before tracking, not after: association is decided by
+        # IoU, so refining afterwards would mean tracks were grouped on the
+        # model's coarse geometry and then given accurate boxes that no longer
+        # justify the grouping.
+        detections = await self._refiner.refine(detections, frames)
         return build_tracks(
             detections,
             iou_threshold=self._iou_threshold,

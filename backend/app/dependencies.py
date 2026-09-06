@@ -20,6 +20,7 @@ from fastapi import Request
 
 from app.adapters.editor_ffmpeg import FfmpegVideoEditor
 from app.adapters.ingest_ytdlp import YtDlpIngestor
+from app.adapters.refine_cv import NullBoxRefiner, OpenCvBoxRefiner
 from app.adapters.sampler_ffmpeg import FfmpegFrameSampler
 from app.adapters.scenes_pyscenedetect import PySceneDetectDetector
 from app.adapters.store_memory import InMemoryJobStore
@@ -27,7 +28,7 @@ from app.adapters.vision_gemini import GeminiVisionDetector
 from app.adapters.vision_stub import StubVisionDetector
 from app.config import Settings
 from app.domain.models import VisionProvider
-from app.domain.ports import JobStore, VisionDetector
+from app.domain.ports import BoxRefiner, JobStore, VisionDetector
 from app.infra.ffmpeg import Ffmpeg
 from app.infra.workspace import WorkspaceManager
 from app.services.job_runner import JobRunner, WorkspaceSweeper
@@ -64,6 +65,11 @@ def build_vision_detector(settings: Settings) -> VisionDetector:
     return StubVisionDetector()
 
 
+def build_box_refiner(settings: Settings) -> BoxRefiner:
+    """Measured boxes, or the model's own. See `adapters/refine_cv.py`."""
+    return OpenCvBoxRefiner() if settings.refine_boxes else NullBoxRefiner()
+
+
 def build_pipeline(settings: Settings) -> Pipeline:
     ffmpeg = Ffmpeg(
         ffmpeg_path=settings.ffmpeg_path,
@@ -84,6 +90,7 @@ def build_pipeline(settings: Settings) -> Pipeline:
             max_frames=settings.max_frames,
         ),
         vision=build_vision_detector(settings),
+        refiner=build_box_refiner(settings),
         editor=FfmpegVideoEditor(
             ffmpeg,
             target_height=settings.target_height,
