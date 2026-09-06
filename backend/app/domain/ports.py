@@ -24,7 +24,7 @@ adapter rather than leaking into every caller.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -32,6 +32,7 @@ from app.domain.models import (
     BBox,
     Detection,
     Job,
+    JobResult,
     JobStatus,
     OverlayTrack,
     RemovalMode,
@@ -44,7 +45,7 @@ from app.domain.models import (
 #: the new status; tests supply one that appends to a list. Progress is pushed
 #: through a callback rather than written to a store by the pipeline itself,
 #: which is what keeps the pipeline ignorant of how jobs are stored.
-ProgressCallback = Callable[[JobStatus], None]
+ProgressCallback = Callable[[JobStatus], Awaitable[None]]
 
 
 @runtime_checkable
@@ -180,4 +181,20 @@ class JobStore(Protocol):
         the request handler and the background worker - touch the same job, and
         read-modify-write would let one silently discard the other's progress.
         """
+        ...
+
+    async def save_result(self, job_id: str, result: JobResult) -> None: ...
+
+    async def get_result(self, job_id: str) -> JobResult | None:
+        """The finished analysis, or None if the job is not done.
+
+        Stored separately from `Job` because the two have different lifetimes and
+        very different sizes: status is polled every 1.5s and must stay cheap,
+        while the result is fetched once and carries every scene and track.
+        """
+        ...
+
+    async def delete(self, job_id: str) -> None:
+        """Forget a job entirely. Used by the TTL sweeper, so that expiring a
+        workspace on disk does not leave its status behind claiming success."""
         ...

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from app.domain.models import BBox, Detection, OverlayKind
-from app.services.track_builder import build_tracks
+from app.services.track_builder import DEFAULT_SINGLETON_CONFIDENCE_FLOOR, build_tracks
 
 CAPTION_BOX = BBox(x=0.1, y=0.8, w=0.8, h=0.1)
 CORNER_BOX = BBox(x=0.75, y=0.03, w=0.2, h=0.06)
@@ -217,6 +217,33 @@ class TestFiltering:
 
     def test_no_detections_yields_no_tracks(self) -> None:
         assert build_tracks([]) == []
+
+    def test_every_detector_can_actually_clear_the_singleton_floor(self) -> None:
+        """A cross-component invariant, and the one that was already broken.
+
+        The stub capped its confidence at 0.75 to signal "I am only a heuristic",
+        while the tracker required 0.7 to keep a single-frame detection. The two
+        numbers were chosen independently, and the result was that a stub overlay
+        seen in one sampled frame could essentially never survive - the escape
+        hatch existed but was unreachable.
+
+        Nothing else would notice: the tracker's tests pass with hand-written
+        confidences, the stub's tests pass on its own output, and only running
+        the two together reveals it. So the reachable ceiling is asserted here.
+        """
+        from app.adapters.vision_stub import StubVisionDetector  # noqa: F401
+
+        stub_ceiling = 0.9  # see the confidence mapping in vision_stub
+        gemini_typical = 0.8
+
+        assert stub_ceiling > DEFAULT_SINGLETON_CONFIDENCE_FLOOR
+        assert gemini_typical > DEFAULT_SINGLETON_CONFIDENCE_FLOOR
+
+    def test_the_floor_is_injectable_so_the_coupling_can_be_tuned(self) -> None:
+        one_weak_sighting = [seen(0.0, confidence=0.55)]
+
+        assert build_tracks(one_weak_sighting) == []
+        assert len(build_tracks(one_weak_sighting, singleton_confidence_floor=0.5)) == 1
 
 
 class TestRealisticSequence:

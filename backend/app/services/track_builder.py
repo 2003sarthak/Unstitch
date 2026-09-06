@@ -61,7 +61,13 @@ _STRONG_TEXT_SIMILARITY = 0.8
 #: A track seen in only one sampled frame is usually a misfire - a compression
 #: artefact, or a one-off hallucination. Kept anyway when the detector was very
 #: confident, because a genuine 1.5s pop-up can legitimately appear once.
-_SINGLETON_CONFIDENCE_FLOOR = 0.7
+#:
+#: This value is coupled to what the *detectors* can actually report, and that
+#: coupling is easy to break silently: a detector whose confidence ceiling sits
+#: below this floor can never have a single-frame detection kept, no matter how
+#: strong the evidence. `tests/test_track_builder.py` asserts every detector's
+#: achievable range clears it.
+DEFAULT_SINGLETON_CONFIDENCE_FLOOR = 0.7
 
 
 @dataclass
@@ -110,6 +116,7 @@ def build_tracks(
     max_gap_s: float = 3.5,
     min_confidence: float = 0.35,
     frame_interval_s: float = 1.5,
+    singleton_confidence_floor: float = DEFAULT_SINGLETON_CONFIDENCE_FLOOR,
 ) -> list[OverlayTrack]:
     """Group detections into overlay tracks.
 
@@ -150,7 +157,7 @@ def build_tracks(
     closed.extend(open_tracks)
     tracks = [
         _finalise(track, index, frame_interval_s)
-        for index, track in enumerate(_worth_keeping(closed))
+        for index, track in enumerate(_worth_keeping(closed, singleton_confidence_floor))
     ]
     log.info("built %d track(s) from %d detection(s)", len(tracks), len(detections))
     return tracks
@@ -250,7 +257,7 @@ def _text_matches(existing: str, incoming: str) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= _TEXT_SIMILARITY_THRESHOLD
 
 
-def _worth_keeping(tracks: Sequence[_OpenTrack]) -> list[_OpenTrack]:
+def _worth_keeping(tracks: Sequence[_OpenTrack], floor: float) -> list[_OpenTrack]:
     """Drop one-frame tracks unless the detector was sure.
 
     Sampling every ~1.5s means a real overlay is almost always seen more than
@@ -258,11 +265,7 @@ def _worth_keeping(tracks: Sequence[_OpenTrack]) -> list[_OpenTrack]:
     misread. The confidence escape hatch keeps genuinely brief pop-ups, which do
     exist in this footage and are exactly the kind of thing a user wants removed.
     """
-    return [
-        track
-        for track in tracks
-        if len(track.detections) > 1 or track.confidence >= _SINGLETON_CONFIDENCE_FLOOR
-    ]
+    return [track for track in tracks if len(track.detections) > 1 or track.confidence >= floor]
 
 
 def _finalise(track: _OpenTrack, index: int, frame_interval_s: float) -> OverlayTrack:

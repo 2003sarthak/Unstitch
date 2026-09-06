@@ -280,7 +280,16 @@ class FfmpegVideoEditor:
                 FilterChain(
                     [
                         Filter("crop", {"w": box.w, "h": box.h, "x": box.x, "y": box.y}),
-                        Filter("boxblur", {"luma_radius": _blur_radius(box), "luma_power": 2}),
+                        Filter(
+                            "boxblur",
+                            dict(
+                                zip(
+                                    ("luma_radius", "chroma_radius", "luma_power"),
+                                    (*_blur_radii(box), 2),
+                                    strict=True,
+                                )
+                            ),
+                        ),
                     ],
                     inputs=[spare],
                     outputs=[blurred],
@@ -378,11 +387,22 @@ class FfmpegVideoEditor:
             raise ProcessingError(f"could not {what}") from exc
 
 
-def _blur_radius(box: PixelBox) -> int:
-    """A blur strong enough to destroy text, bounded by what boxblur accepts.
+def _blur_radii(box: PixelBox) -> tuple[int, int]:
+    """Luma and chroma blur radii, each inside what boxblur will accept.
 
-    The filter rejects a radius above half the region's smaller side, so a thin
-    caption strip needs a proportionally smaller radius than a square popup; a
-    fixed value would work on one and fail on the other.
+    `boxblur` requires a radius strictly below half its plane's smaller side, and
+    it blurs the chroma planes as well as luma. In yuv420p - which everything
+    here is encoded as - the chroma planes are *half resolution*, so chroma is
+    the binding constraint, at half the limit luma has.
+
+    Leaving `chroma_radius` to default to the luma value is therefore a bug that
+    only shows up on thin regions: a 41px-tall caption strip yields a luma radius
+    of 10, which is legal for luma and rejected for chroma, and the whole render
+    fails. Computing the two separately keeps the luma blur strong enough to
+    destroy text while staying valid.
     """
-    return max(1, min(box.w, box.h) // 4)
+    smaller = min(box.w, box.h)
+    luma = max(0, min(smaller // 4, (smaller - 1) // 2))
+    chroma_smaller = smaller // 2
+    chroma = max(0, min(luma, (chroma_smaller - 1) // 2))
+    return luma, chroma

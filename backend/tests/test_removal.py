@@ -143,10 +143,16 @@ class TestBoxblurGraph:
         crop = rendered.split("crop=")[1]
         crop_w = int(crop.split("w=")[1].split(":")[0])
         crop_h = int(crop.split("h=")[1].split(":")[0])
-        radius = int(rendered.split("luma_radius=")[1].split(":")[0])
+        luma = int(rendered.split("luma_radius=")[1].split(":")[0])
+        chroma = int(rendered.split("chroma_radius=")[1].split(":")[0])
 
-        assert radius >= 1
-        assert radius <= min(crop_w, crop_h) / 2
+        smaller = min(crop_w, crop_h)
+        # Strictly less than half the plane's smaller side, per plane. The chroma
+        # planes are half resolution in yuv420p, which is the constraint that
+        # actually bites - and the one an earlier version of this test missed by
+        # checking only luma.
+        assert 0 <= luma < smaller / 2
+        assert 0 <= chroma < max(1, smaller // 2) / 2
 
 
 class TestAgainstRealFfmpeg:
@@ -228,3 +234,87 @@ class TestAgainstRealFfmpeg:
         assert (await editor.probe(clip)).duration_s == pytest.approx(1.0, abs=0.2)
         assert thumb.stat().st_size > 0
         assert crop.stat().st_size > 0
+
+
+class TestPixelsActuallyChange:
+    """The claim the whole product rests on, checked in pixel space.
+
+    Every other test here asserts on argument lists, exit codes and metadata -
+    all of which a render that quietly did nothing would satisfy. This one opens
+    both videos and compares them.
+    """
+
+    @pytest.fixture
+    async def banded_video(self, ffmpeg: Ffmpeg, tmp_path: Path) -> Path:
+        """Flat teal with a row of white strokes across the lower third.
+
+        Strokes rather than one solid bar, because the two modes fail on
+        different things and a solid bar is pathological for exactly one of them.
+        `delogo` interpolates a region from its border and erases either, but a
+        blur whose radius is bounded by the region it sits in cannot flatten a
+        solid fill - the middle stays bright however hard it is smeared.
+
+        Burned-in text is thin strokes with background showing between them,
+        which is the case blurring genuinely destroys. Asserting against a solid
+        bar would measure a limitation of the fixture and report it as a bug in
+        `boxblur`.
+        """
+        path = tmp_path / "banded.mp4"
+        strokes = ",".join(
+            f"drawbox=x={36 + i * 22}:y=272:w=9:h=26:color=white:t=fill" for i in range(12)
+        )
+        await ffmpeg.run(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=teal:size=320x320:rate=24:duration=2",
+                "-vf",
+                strokes,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                str(path),
+            ]
+        )
+        return path
+
+    @pytest.mark.parametrize("mode", [RemovalMode.DELOGO, RemovalMode.BOXBLUR])
+    async def test_the_overlay_is_gone_and_the_rest_is_untouched(
+        self, ffmpeg: Ffmpeg, banded_video: Path, tmp_path: Path, mode: RemovalMode
+    ) -> None:
+        import cv2
+        import numpy as np
+
+        meta = await ffmpeg.probe(banded_video)
+        out = tmp_path / f"clean_{mode}.mp4"
+        band = track(x=0.1, y=0.85, w=0.8, h=0.09, start=0.0, end=2.0)
+
+        await FfmpegVideoEditor(ffmpeg).remove_overlays(banded_video, out, [band], meta, mode)
+
+        before, after = cv2.VideoCapture(str(banded_video)), cv2.VideoCapture(str(out))
+        for capture in (before, after):
+            capture.set(cv2.CAP_PROP_POS_MSEC, 1000)
+        ok_a, frame_a = before.read()
+        ok_b, frame_b = after.read()
+        before.release()
+        after.release()
+        assert ok_a and ok_b
+
+        h, w = frame_a.shape[:2]
+        y0, y1 = int(0.84 * h), int(0.95 * h)
+
+        bright_before = float(np.mean(frame_a[y0:y1] > 200))
+        bright_after = float(np.mean(frame_b[y0:y1] > 200))
+        assert bright_before > 0.1, "the fixture must actually contain bright strokes"
+        assert bright_after < bright_before / 4, f"{mode} left the overlay legible"
+
+        # And the footage the mask never covered must survive untouched, or the
+        # "removal" is really just degrading the whole video.
+        untouched = cv2.absdiff(
+            frame_a[int(0.2 * h) : int(0.6 * h)], frame_b[int(0.2 * h) : int(0.6 * h)]
+        )
+        assert float(np.mean(untouched)) < 3.0

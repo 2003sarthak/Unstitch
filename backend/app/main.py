@@ -1,12 +1,13 @@
 """FastAPI application factory.
 
 Deliberately a factory rather than a module-level `app = FastAPI()`: tests build
-an isolated instance with their own `Settings`, and nothing is constructed as an
-import side effect.
+an isolated instance with their own `Settings` and their own container, and
+nothing is constructed as an import side effect.
 
-Routers land here in step 10 of the build order. For now the app exists so that
-the configuration, the container and the deployment target can each be verified
-independently of the pipeline.
+The lifespan is where the background machinery starts and - just as importantly -
+stops. A worker pool that is not drained on shutdown leaves ffmpeg subprocesses
+orphaned, which on a small Space is the difference between a clean restart and a
+container that comes back already loaded.
 """
 
 from __future__ import annotations
@@ -19,7 +20,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.api.errors import install_error_handlers
+from app.api.routes_jobs import router as jobs_router
+from app.api.routes_media import router as media_router
 from app.config import Settings, get_settings
+from app.dependencies import Container, build_container
 
 APP_VERSION = "0.1.0"
 
@@ -29,9 +34,9 @@ log = logging.getLogger("unstitch")
 class Health(BaseModel):
     """Reports the *effective* configuration, not the requested one.
 
-    A deployment where `VISION_PROVIDER=gemini` but the secret never made it into
-    the environment is the single most likely production failure here, and it is
-    invisible from the outside unless the health endpoint admits to it.
+    A deployment where `VISION_PROVIDER=gemini` but the secret never reached the
+    environment is the most likely production failure here, and it is invisible
+    from outside unless the health endpoint admits to it.
     """
 
     status: str
@@ -39,11 +44,13 @@ class Health(BaseModel):
     vision_provider: str
     vision_provider_requested: str
     removal_mode: str
+    queued_jobs: int
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings: Settings = app.state.settings
+    container: Container = app.state.container
+    settings = container.settings
 
     logging.basicConfig(
         level=settings.log_level.upper(),
@@ -61,14 +68,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             "be heuristic, not semantic.",
             settings.vision_provider.value,
         )
+
+    await container.runner.start()
+    await container.sweeper.start()
     log.info(
-        "unstitch %s ready | vision=%s removal=%s media_root=%s",
+        "unstitch %s ready | vision=%s removal=%s workers=%d media_root=%s",
         APP_VERSION,
         settings.effective_vision_provider.value,
         settings.removal_mode.value,
+        settings.max_concurrent_jobs,
         settings.media_root_path,
     )
-    yield
+    try:
+        yield
+    finally:
+        await container.sweeper.stop()
+        await container.runner.stop()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -80,9 +95,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary="Break a short-form video back into its editable components.",
         lifespan=_lifespan,
     )
-    # Stashed on app.state so `_lifespan` and the dependency layer read the same
-    # instance the factory was handed - injection, not a module-level lookup.
-    app.state.settings = settings
+    # Stashed on app.state so the lifespan, the routes and a test all read the
+    # same instance the factory was handed - injection, not a module-level global.
+    app.state.container = build_container(settings)
 
     app.add_middleware(
         CORSMiddleware,
@@ -92,14 +107,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    install_error_handlers(app)
+    app.include_router(jobs_router)
+    app.include_router(media_router)
+
     @app.get("/api/health", response_model=Health, tags=["meta"])
     async def health() -> Health:
+        container: Container = app.state.container
         return Health(
             status="ok",
             version=APP_VERSION,
             vision_provider=settings.effective_vision_provider.value,
             vision_provider_requested=settings.vision_provider.value,
             removal_mode=settings.removal_mode.value,
+            queued_jobs=container.runner.pending,
         )
 
     return app

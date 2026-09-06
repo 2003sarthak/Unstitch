@@ -145,14 +145,34 @@ class TestStubDetector:
             assert detection.bbox.y >= 0.0 and detection.bbox.bottom <= 1.0
             assert isinstance(detection.kind, OverlayKind)
 
-    async def test_it_never_claims_model_level_confidence(
+    async def test_it_reports_evidence_strength_and_never_reads_text(
         self, frame_with_text: SampledFrame
     ) -> None:
-        """A heuristic that cannot read the text must not report the certainty of
-        a model that has."""
-        for detection in await StubVisionDetector().detect([frame_with_text]):
-            assert detection.confidence <= 0.75
+        """Confidence answers "how sure am I this is an overlay", not "how much
+        should you trust this detector" - the latter is a property of the
+        detector, and `JobResult.vision_provider` already carries it.
+
+        Deflating every score to express humility was a real bug: it pushed the
+        stub's ceiling under the tracker's floor for keeping single-frame
+        detections. What the stub must still never do is claim to have *read*
+        anything, because it cannot.
+        """
+        detections = await StubVisionDetector().detect([frame_with_text])
+        assert detections
+        for detection in detections:
             assert detection.text == ""
+            assert 0.0 < detection.confidence < 1.0
+
+    async def test_a_clear_overlay_is_confident_enough_to_survive_tracking(
+        self, frame_with_text: SampledFrame
+    ) -> None:
+        """The integration that was broken. A strong, unambiguous band has to
+        clear the tracker's singleton floor, or an overlay seen in one sampled
+        frame is silently discarded."""
+        from app.services.track_builder import DEFAULT_SINGLETON_CONFIDENCE_FLOOR
+
+        best = max(d.confidence for d in await StubVisionDetector().detect([frame_with_text]))
+        assert best >= DEFAULT_SINGLETON_CONFIDENCE_FLOOR
 
     async def test_a_missing_frame_file_is_survivable(self, tmp_path: Path) -> None:
         """One unreadable frame must not fail a whole job."""

@@ -116,9 +116,17 @@ def _text_like_regions(gray: np.ndarray) -> list[tuple[int, int, int, int, float
         density = float(np.count_nonzero(binary[y : y + h, x : x + w])) / float(w * h)
         if density < 0.08:
             continue
-        # Deliberately capped below 1.0: a heuristic should never report the
-        # confidence of a model that has actually read the words.
-        regions.append((x, y, w, h, round(min(0.75, 0.35 + density), 3)))
+        # Confidence answers "how sure am I this is an overlay", scaled by how
+        # densely the box is filled with edges. It is NOT the place to express
+        # "I am only a heuristic" - that is a property of the detector, not of
+        # each detection, and `JobResult.vision_provider` already says it.
+        #
+        # Deflating every score to signal distrust was an outright bug: it put
+        # the stub's ceiling below the tracker's floor for keeping a single-frame
+        # detection, so no stub overlay seen in only one sampled frame could ever
+        # survive. Capped just under 1.0, because a detector that cannot read the
+        # text has no business claiming certainty.
+        regions.append((x, y, w, h, round(min(0.9, 0.45 + 2.2 * density), 3)))
 
     regions.sort(key=lambda r: r[4], reverse=True)
     return regions

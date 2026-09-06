@@ -424,6 +424,19 @@ class Job(BaseModel):
         return self.status.progress
 
 
+class JobRequest(BaseModel):
+    """What the caller asks for. Doubles as the POST body.
+
+    `url` is absent for uploads - there is nothing to fetch, because the route
+    has already written the bytes into the workspace.
+    """
+
+    url: str | None = Field(default=None, description="Video URL to download")
+    removal_mode: RemovalMode = Field(
+        default=RemovalMode.DELOGO, description="How detected overlays are erased"
+    )
+
+
 class JobResult(BaseModel):
     """The finished de-edit. What `GET /api/jobs/{id}/result` returns.
 
@@ -445,3 +458,7 @@ class JobResult(BaseModel):
             "the offline stub should never be mistaken for a real analysis."
         )
     )
+
+    @property
+    def track_count(self) -> int:
+        return len(self.tracks)
