@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Deliberately minimal. The brief weights functionality over visual design, so
+   this sets a legible dark surface and gets out of the way. */
+:root {
+  color-scheme: dark;
+}
