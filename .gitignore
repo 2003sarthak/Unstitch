@@ -28,6 +28,7 @@ venv/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # --- Editors / OS ------------------------------------------------------------
 .vscode/
@@ -38,3 +39,6 @@ Thumbs.db
 # --- Sample videos ARE committed so a reviewer can run the demo offline ------
 !samples/
 !samples/**
+
+# --- Assignment brief: kept locally for reference, not republished ----------
+AssignmentDocs/
