@@ -46,6 +46,23 @@ log = logging.getLogger(__name__)
 #: as they are spoken.
 _TEXT_SIMILARITY_THRESHOLD = 0.6
 
+#: Added to both boxes before their overlap is measured, as a fraction of the
+#: frame. This corrects a scale bias in IoU that fragments exactly the overlays
+#: it should hold together.
+#:
+#: IoU is a *ratio*, so a fixed amount of jitter costs a small box far more than
+#: a large one. A watermark 12% of the frame wide that shifts 1% between sampled
+#: frames scores 0.42 and splits; a caption 80% wide with the identical 1% shift
+#: scores 0.80 and holds. On a real video that produced nine separate tracks
+#: piled in one corner where there was one watermark and some UI furniture.
+#:
+#: Padding both boxes by a fixed fraction of the frame before comparing makes the
+#: tolerance absolute rather than proportional, so the threshold means the same
+#: thing at every scale. It is deliberately small: it lifts the watermark pair to
+#: 0.53 while a caption sitting inside a full-frame pop-up still scores 0.11 and
+#: stays separate.
+_JITTER_TOLERANCE_PCT = 1.5
+
 #: When two sightings carry near-identical text, one box being largely inside
 #: the other is enough to associate them even if IoU falls short. This is what
 #: handles a caption that is revealed word by word: the box grows with the text,
@@ -193,7 +210,7 @@ def _best_match(
         if track.kind is not detection.kind:
             continue  # a caption never becomes a watermark
         recent = track.detections[-1].bbox
-        iou = recent.iou(detection.bbox)
+        iou = _tolerant_iou(recent, detection.bbox)
 
         if iou >= iou_threshold and _text_matches(track.text, detection.text):
             score = iou
@@ -208,6 +225,11 @@ def _best_match(
         if score > best_score:
             best, best_score = track, score
     return best
+
+
+def _tolerant_iou(a: BBox, b: BBox) -> float:
+    """IoU with a fixed absolute tolerance, so the threshold is scale-neutral."""
+    return a.padded(_JITTER_TOLERANCE_PCT).iou(b.padded(_JITTER_TOLERANCE_PCT))
 
 
 def _containment(a: BBox, b: BBox) -> float:

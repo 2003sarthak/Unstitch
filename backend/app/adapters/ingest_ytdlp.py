@@ -23,11 +23,19 @@ from app.domain.errors import InvalidInputError, MediaTooLongError
 
 log = logging.getLogger(__name__)
 
-#: Prefer a progressive MP4 at or below 1080p, then fall back. Normalisation
-#: re-encodes anyway, so the goal is a small, quick, reliable download rather
-#: than the best available quality - pulling 4K to immediately downscale it to
-#: 720 would just spend someone's bandwidth.
-_FORMAT = "best[height<=1080][ext=mp4]/best[height<=1080]/best"
+#: Video and audio are selected separately and merged.
+#:
+#: The obvious spelling - `best[height<=1080][ext=mp4]` - asks for a single file
+#: containing both streams, and YouTube has largely stopped serving those. A real
+#: Shorts URL offers eighteen video-only renditions and five audio-only ones and
+#: not one progressive MP4, so that selector fails with "Requested format is not
+#: available" on a video that downloads perfectly well. `bv*+ba` asks for the two
+#: halves and lets ffmpeg mux them, with progressive kept as a fallback for the
+#: sites that still offer it.
+#:
+#: The height cap is about bandwidth, not quality: normalisation re-encodes to
+#: 720 anyway, so pulling 1080 is the most that can ever be useful.
+_FORMAT = "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"
 
 
 class YtDlpIngestor:
@@ -59,6 +67,10 @@ class YtDlpIngestor:
         options: dict[str, object] = {
             "format": _FORMAT,
             "noplaylist": True,  # a playlist URL should yield one video, not forty
+            # Separate video and audio streams have to be muxed into something;
+            # without this yt-dlp picks a container per-download and the result
+            # is sometimes .webm, sometimes .mkv.
+            "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
             "socket_timeout": self._socket_timeout_s,
@@ -145,6 +157,14 @@ def _friendly_error(url: str, exc: Exception) -> InvalidInputError:
         advice = "that video is unavailable or has been removed."
     elif "unsupported url" in message or "no video" in message:
         advice = "that link does not point at a video we can download."
+    elif "requested format is not available" in message:
+        # Ours, not theirs. This one hid a broken format selector behind a
+        # message telling the user their perfectly good link was the problem -
+        # so it says plainly that the site is fine and we are not.
+        advice = (
+            "this video is available but not in a format we asked for. That is a "
+            "bug on our side, not a problem with your link."
+        )
     else:
         advice = "could not download that link. Uploading the file directly always works."
     log.warning("yt-dlp failed for %s: %s", url, exc)

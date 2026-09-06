@@ -64,6 +64,42 @@ class TestAssociation:
         tracks = build_tracks([seen(0.0, CAPTION_BOX), seen(1.5, far)], min_confidence=0.0)
         assert len(tracks) == 2
 
+    def test_a_small_overlay_tolerates_the_same_jitter_as_a_large_one(self) -> None:
+        """IoU is a ratio, so identical jitter costs a small box far more than a
+        large one - which fragments watermarks and UI chrome while leaving
+        captions intact.
+
+        On a real YouTube Short this produced nine tracks piled into one corner
+        where there was one watermark. Both pairs below shift by the same 1% of
+        the frame and both must stay whole.
+        """
+        watermark = [
+            seen(0.0, BBox(x=0.85, y=0.83, w=0.12, h=0.07), kind=OverlayKind.WATERMARK, text=""),
+            seen(1.5, BBox(x=0.86, y=0.84, w=0.12, h=0.07), kind=OverlayKind.WATERMARK, text=""),
+        ]
+        caption = [
+            seen(0.0, BBox(x=0.10, y=0.80, w=0.80, h=0.10), text=""),
+            seen(1.5, BBox(x=0.11, y=0.81, w=0.80, h=0.10), text=""),
+        ]
+
+        assert len(build_tracks(watermark)) == 1, "small overlays must not fragment"
+        assert len(build_tracks(caption)) == 1
+
+    def test_tolerance_does_not_merge_genuinely_different_elements(self) -> None:
+        """The tolerance is absolute and small, so it must not turn two distinct
+        corner elements into one."""
+        top_left = BBox(x=0.03, y=0.03, w=0.10, h=0.06)
+        top_right = BBox(x=0.87, y=0.03, w=0.10, h=0.06)
+        tracks = build_tracks(
+            [
+                seen(0.0, top_left, kind=OverlayKind.WATERMARK, text=""),
+                seen(0.0, top_right, kind=OverlayKind.WATERMARK, text=""),
+                seen(1.5, top_left, kind=OverlayKind.WATERMARK, text=""),
+                seen(1.5, top_right, kind=OverlayKind.WATERMARK, text=""),
+            ]
+        )
+        assert len(tracks) == 2
+
     def test_jitter_between_frames_is_tolerated(self) -> None:
         """A caption that shifts 1% of the frame is the same caption."""
         drifted = BBox(x=0.11, y=0.81, w=0.8, h=0.1)
